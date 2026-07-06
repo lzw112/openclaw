@@ -97,6 +97,10 @@ export function createBoundedMistralFetcher(
  * Provider-specific options for the Mistral API.
  */
 type MistralReasoningEffort = "none" | "high";
+type MistralReasoningCompat = {
+  supportsReasoningEffort?: boolean;
+  reasoningEffortMap?: Partial<Record<NonNullable<SimpleStreamOptions["reasoning"]>, string>>;
+};
 
 export interface MistralOptions extends StreamOptions {
   toolChoice?:
@@ -195,19 +199,11 @@ export const streamSimpleMistral: StreamFunction<"mistral-conversations", Simple
   }
 
   const base = buildBaseOptions(model, options, apiKey);
-  const clampedReasoning = options?.reasoning
-    ? clampThinkingLevel(model, options.reasoning)
-    : undefined;
-  const reasoning = clampedReasoning === "off" ? undefined : clampedReasoning;
-  const shouldUseReasoning = model.reasoning && reasoning !== undefined;
+  const reasoningOptions = resolveMistralSimpleReasoning(model, options?.reasoning);
 
   return streamMistral(model, context, {
     ...base,
-    promptMode: shouldUseReasoning && usesPromptModeReasoning(model) ? "reasoning" : undefined,
-    reasoningEffort:
-      shouldUseReasoning && usesReasoningEffort(model)
-        ? mapReasoningEffort(model, reasoning)
-        : undefined,
+    ...reasoningOptions,
   } satisfies MistralOptions);
 };
 
@@ -757,10 +753,13 @@ function buildToolResultText(
 }
 
 function usesReasoningEffort(model: Model<"mistral-conversations">): boolean {
+  if (readMistralReasoningCompat(model)?.supportsReasoningEffort === true) {
+    return true;
+  }
   return (
     model.id === "mistral-small-2603" ||
     model.id === "mistral-small-latest" ||
-    model.id === "mistral-medium-3.5"
+    model.id === "mistral-medium-3-5"
   );
 }
 
@@ -768,11 +767,39 @@ function usesPromptModeReasoning(model: Model<"mistral-conversations">): boolean
   return model.reasoning && !usesReasoningEffort(model);
 }
 
+function resolveMistralSimpleReasoning(
+  model: Model<"mistral-conversations">,
+  requested: SimpleStreamOptions["reasoning"] | undefined,
+): Pick<MistralOptions, "promptMode" | "reasoningEffort"> {
+  if (!requested) {
+    return {};
+  }
+  if (usesReasoningEffort(model)) {
+    return { reasoningEffort: mapReasoningEffort(model, requested) };
+  }
+
+  const clampedReasoning = clampThinkingLevel(model, requested);
+  if (clampedReasoning === "off" || !usesPromptModeReasoning(model)) {
+    return {};
+  }
+  return { promptMode: "reasoning" };
+}
+
 function mapReasoningEffort(
   model: Model<"mistral-conversations">,
   level: Exclude<SimpleStreamOptions["reasoning"], undefined>,
 ): MistralReasoningEffort {
-  return (model.thinkingLevelMap?.[level] ?? "high") as MistralReasoningEffort;
+  const compatMap = readMistralReasoningCompat(model)?.reasoningEffortMap;
+  return (compatMap?.[level] ??
+    model.thinkingLevelMap?.[level] ??
+    (level === "minimal" ? "none" : "high")) as MistralReasoningEffort;
+}
+
+function readMistralReasoningCompat(
+  model: Model<"mistral-conversations">,
+): MistralReasoningCompat | undefined {
+  const compat = (model as { compat?: unknown }).compat;
+  return compat && typeof compat === "object" ? (compat as MistralReasoningCompat) : undefined;
 }
 
 function mapToolChoice(

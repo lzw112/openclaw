@@ -89,6 +89,59 @@ describe("Mistral provider", () => {
     expect((mistralMockState.payloads[0] as { stop?: unknown }).stop).toEqual(["STOP"]);
   });
 
+  it("keeps Mistral reasoning_effort when compat enables it but model reasoning is false", async () => {
+    const model = {
+      ...makeMistralModel(),
+      id: "mistral-small-latest",
+      reasoning: false,
+      compat: {
+        supportsReasoningEffort: true,
+        reasoningEffortMap: {
+          minimal: "none",
+          low: "high",
+          medium: "high",
+          high: "high",
+          xhigh: "high",
+          max: "high",
+        },
+      },
+    } as Model<"mistral-conversations">;
+
+    const stream = streamSimpleMistral(model, context, {
+      apiKey: "sk-mistral-provider",
+      reasoning: "high",
+    });
+
+    const result = await stream.result();
+
+    expect(result.stopReason).toBe("error");
+    expect((mistralMockState.payloads[0] as { reasoningEffort?: unknown }).reasoningEffort).toBe(
+      "high",
+    );
+  });
+
+  it("maps mistral-medium-3-5 simple reasoning to reasoning_effort", async () => {
+    const stream = streamSimpleMistral(
+      {
+        ...makeMistralModel(),
+        id: "mistral-medium-3-5",
+        reasoning: false,
+      },
+      context,
+      {
+        apiKey: "sk-mistral-provider",
+        reasoning: "high",
+      },
+    );
+
+    const result = await stream.result();
+
+    expect(result.stopReason).toBe("error");
+    expect((mistralMockState.payloads[0] as { reasoningEffort?: unknown }).reasoningEffort).toBe(
+      "high",
+    );
+  });
+
   it("skips unreadable tool schemas while preserving healthy Mistral tools", async () => {
     const stream = streamMistral(
       makeMistralModel(),
