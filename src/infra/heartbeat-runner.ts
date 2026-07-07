@@ -107,7 +107,7 @@ import {
 } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
-import { escapeRegExp } from "../utils.js";
+import { escapeRegExp, truncateUtf16Safe } from "../utils.js";
 import { MAX_SAFE_TIMEOUT_DELAY_MS, resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { loadOrCreateDeviceIdentity } from "./device-identity.js";
 import { formatErrorMessage, hasErrnoCode } from "./errors.js";
@@ -2007,7 +2007,7 @@ export async function runHeartbeatOnce(opts: {
       emitHeartbeatEvent({
         status: "ok-token",
         reason: opts.reason,
-        preview: heartbeatToolResponse.summary.slice(0, 200),
+        preview: truncateUtf16Safe(heartbeatToolResponse.summary, 200),
         durationMs: Date.now() - startedAt,
         channel: delivery.channel !== "none" ? delivery.channel : undefined,
         accountId: delivery.accountId,
@@ -2161,7 +2161,7 @@ export async function runHeartbeatOnce(opts: {
       emitHeartbeatEvent({
         status: "skipped",
         reason: "duplicate",
-        preview: normalized.text.slice(0, 200),
+        preview: truncateUtf16Safe(normalized.text, 200),
         durationMs: Date.now() - startedAt,
         hasMedia: false,
         channel: delivery.channel !== "none" ? delivery.channel : undefined,
@@ -2190,7 +2190,7 @@ export async function runHeartbeatOnce(opts: {
       emitHeartbeatEvent({
         status: "skipped",
         reason: delivery.reason ?? "no-target",
-        preview: previewText?.slice(0, 200),
+        preview: previewText != null ? truncateUtf16Safe(previewText, 200) : undefined,
         durationMs: Date.now() - startedAt,
         hasMedia: mediaUrls.length > 0,
         accountId: delivery.accountId,
@@ -2210,7 +2210,7 @@ export async function runHeartbeatOnce(opts: {
       emitHeartbeatEvent({
         status: "skipped",
         reason: "alerts-disabled",
-        preview: previewText?.slice(0, 200),
+        preview: previewText != null ? truncateUtf16Safe(previewText, 200) : undefined,
         durationMs: Date.now() - startedAt,
         channel: delivery.channel,
         hasMedia: mediaUrls.length > 0,
@@ -2233,7 +2233,7 @@ export async function runHeartbeatOnce(opts: {
         emitHeartbeatEvent({
           status: "skipped",
           reason: readiness.reason,
-          preview: previewText?.slice(0, 200),
+          preview: previewText != null ? truncateUtf16Safe(previewText, 200) : undefined,
           durationMs: Date.now() - startedAt,
           hasMedia: mediaUrls.length > 0,
           channel: delivery.channel,
@@ -2317,7 +2317,7 @@ export async function runHeartbeatOnce(opts: {
       to: delivery.to,
       ...(deliveredAgentRunFailure ? { reason: "agent-runner-failure" } : {}),
       ...(!deliveredAgentRunFailure && !visibleSendSucceeded ? { reason: send.reason } : {}),
-      preview: previewText?.slice(0, 200),
+      preview: previewText != null ? truncateUtf16Safe(previewText, 200) : undefined,
       durationMs: Date.now() - startedAt,
       hasMedia: mediaUrls.length > 0,
       channel: delivery.channel,
