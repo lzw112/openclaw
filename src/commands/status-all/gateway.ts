@@ -16,13 +16,6 @@ export async function readFileTailLines(filePath: string, maxLines: number): Pro
   return out.map((line) => line.trimEnd()).filter((line) => line.trim().length > 0);
 }
 
-function countMatches(haystack: string, needle: string): number {
-  if (!haystack || !needle) {
-    return 0;
-  }
-  return haystack.split(needle).length - 1;
-}
-
 function shorten(message: string, maxLen: number): string {
   const cleaned = message.replace(/\s+/g, " ").trim();
   if (cleaned.length <= maxLen) {
@@ -52,13 +45,41 @@ function consumeJsonBlock(
   }
 
   const parts: string[] = [startLine.slice(braceAt)];
-  let depth = countMatches(parts[0] ?? "", "{") - countMatches(parts[0] ?? "", "}");
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  const scan = (text: string) => {
+    // Gateway logs carry JSON fragments as text; braces inside quoted strings
+    // must not end the block or OAuth diagnostics lose their provider message.
+    for (const char of text) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (inString) {
+        if (char === "\\") {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+    }
+  };
+  scan(parts[0] ?? "");
   let i = startIndex;
   while (depth > 0 && i + 1 < lines.length) {
     i += 1;
     const next = lines[i] ?? "";
     parts.push(next);
-    depth += countMatches(next, "{") - countMatches(next, "}");
+    scan(next);
   }
   return { json: parts.join("\n"), endIndex: i };
 }

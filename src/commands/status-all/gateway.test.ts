@@ -24,6 +24,19 @@ describe("summarizeLogTail", () => {
     expect(lines).toEqual(["[openai] token refresh 401 invalid_grant · re-auth required"]);
   });
 
+  it("keeps OAuth JSON diagnostics when the message contains braces", () => {
+    const lines = summarizeLogTail([
+      "[openai] Token refresh failed: 401 {",
+      `"error":${JSON.stringify({
+        code: "invalid_grant",
+        message: "Session invalidated } due to signing in again",
+      })}`,
+      "}",
+    ]);
+
+    expect(lines).toEqual(["[openai] token refresh 401 invalid_grant · re-auth required"]);
+  });
+
   it("keeps bounded OAuth diagnostics UTF-16 well-formed", () => {
     const lines = summarizeLogTail([
       "[openai] Token refresh failed: 500 {",
