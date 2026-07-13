@@ -119,8 +119,9 @@ describe("zalo send", () => {
     await sendMessageZalo("zalo:group:dm-chat-prefixed-text", "hello", {
       token: "zalo-token",
     });
-    await sendPhotoZalo("zl:user:dm-chat-prefixed-photo", "https://example.com/photo.jpg", {
+    await sendMessageZalo("zl:user:dm-chat-prefixed-photo", "", {
       token: "zalo-token",
+      mediaUrl: "https://example.com/photo.jpg",
     });
 
     expect(sendMessageMock).toHaveBeenCalledWith(
