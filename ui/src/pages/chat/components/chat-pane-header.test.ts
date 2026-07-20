@@ -4,6 +4,11 @@ import { html, nothing, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import {
+  COMMAND_PALETTE_OPEN_EVENT,
+  SHELL_NAV_DRAWER_TOGGLE_EVENT,
+  type ShellNavDrawerToggleDetail,
+} from "../../../components/command-palette-contract.ts";
+import {
   canRevealSessionWorkspace,
   renderChatPaneHeader,
   resolveChatPaneWorkspace,
@@ -27,8 +32,8 @@ function mount(patch: Partial<ChatPaneHeaderProps> = {}) {
   containers.push(container);
   const props: ChatPaneHeaderProps = {
     paneId: "pane-1",
-    active: true,
     narrow: false,
+    mergedChrome: false,
     title: "Session title",
     session: row(),
     catalog: false,
@@ -37,11 +42,14 @@ function mount(patch: Partial<ChatPaneHeaderProps> = {}) {
     workspaceRoot: "/repo/openclaw",
     workspaceLabel: "openclaw",
     branch: "feature/header",
+    branches: [],
+    branchSwitchDisabledReason: null,
     platform: "darwin",
     canReveal: true,
     copiedAction: null,
     canRename: true,
     terminalAction: nothing,
+    discussionAction: nothing,
     diffAction: nothing,
     backgroundTasksAction: nothing,
     workspaceAction: nothing,
@@ -51,6 +59,7 @@ function mount(patch: Partial<ChatPaneHeaderProps> = {}) {
     onCancelRename: vi.fn(),
     onMenuOpenChange: vi.fn(),
     onMenuAction: vi.fn(),
+    onBranchSelect: vi.fn(),
     ...patch,
   };
   render(html`${renderChatPaneHeader(props)}`, container);
@@ -58,6 +67,38 @@ function mount(patch: Partial<ChatPaneHeaderProps> = {}) {
 }
 
 describe("chat pane header", () => {
+  it("renders and dispatches merged chrome actions for catalog sessions", () => {
+    const drawerEvents: CustomEvent<ShellNavDrawerToggleDetail>[] = [];
+    const paletteEvents: Event[] = [];
+    const onDrawer = (event: Event) =>
+      drawerEvents.push(event as CustomEvent<ShellNavDrawerToggleDetail>);
+    const onPalette = (event: Event) => paletteEvents.push(event);
+    window.addEventListener(SHELL_NAV_DRAWER_TOGGLE_EVENT, onDrawer);
+    window.addEventListener(COMMAND_PALETTE_OPEN_EVENT, onPalette);
+    const { container } = mount({ mergedChrome: true, catalog: true, session: undefined });
+    const drawer = container.querySelector<HTMLButtonElement>('[aria-label="Expand sidebar"]');
+    const palette = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open command palette"]',
+    );
+
+    drawer?.click();
+    palette?.click();
+
+    expect(drawer).not.toBeNull();
+    expect(palette).not.toBeNull();
+    expect(drawerEvents).toHaveLength(1);
+    expect(drawerEvents[0]?.detail.trigger).toBe(drawer);
+    expect(paletteEvents).toHaveLength(1);
+    window.removeEventListener(SHELL_NAV_DRAWER_TOGGLE_EVENT, onDrawer);
+    window.removeEventListener(COMMAND_PALETTE_OPEN_EVENT, onPalette);
+  });
+
+  it("omits shell chrome actions when the header is not merged", () => {
+    const { container } = mount();
+    expect(container.querySelector(".chat-pane__nav-toggle")).toBeNull();
+    expect(container.querySelector(".chat-pane__palette-open")).toBeNull();
+  });
+
   it("renders an editable title and workspace chip", () => {
     const { container, props } = mount();
     const title = container.querySelector<HTMLButtonElement>(".chat-pane__session-title-button");
@@ -125,6 +166,58 @@ describe("chat pane header", () => {
     expect(container.querySelector(".chat-pane__cloud")).not.toBeNull();
     expect(container.querySelector('wa-dropdown-item[value="reveal"]')).toBeNull();
     expect(container.querySelector('wa-dropdown-item[value="copy-path"]')).not.toBeNull();
+  });
+
+  it("hides one branch and lists multiple branches with the active tip marked", () => {
+    const one = mount({
+      branches: [{ leafEntryId: "only", headline: "Only path", messageCount: 1, active: true }],
+    });
+    expect(one.container.querySelector(".chat-pane__branches-trigger")).toBeNull();
+
+    const multiple = mount({
+      branches: [
+        { leafEntryId: "active", headline: "Current work", messageCount: 4, active: true },
+        {
+          leafEntryId: "other",
+          headline: "Earlier idea",
+          messageCount: 2,
+          updatedAt: new Date(Date.now() - 60_000).toISOString(),
+          active: false,
+        },
+      ],
+    });
+    const items = multiple.container.querySelectorAll(".chat-pane__branch-item");
+    expect(multiple.container.querySelector(".chat-pane__branches-trigger")).not.toBeNull();
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toContain("Current work");
+    expect(items[0]?.getAttribute("data-active")).toBe("true");
+    expect(items[0]?.querySelector(".chat-pane__branch-active")).not.toBeNull();
+    expect(items[1]?.textContent).toContain("Earlier idea");
+
+    multiple.container.querySelector(".chat-pane__branches-menu")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        detail: { item: { value: "other" } },
+      }),
+    );
+    expect(multiple.props.onBranchSelect).toHaveBeenCalledWith("other");
+  });
+
+  it("disables branch switching while the agent is working", () => {
+    const { container, props } = mount({
+      branchSwitchDisabledReason: "Branch switch is unavailable while the agent is working.",
+      branches: [
+        { leafEntryId: "active", headline: "Current work", messageCount: 4, active: true },
+        { leafEntryId: "other", headline: "Earlier idea", messageCount: 2, active: false },
+      ],
+    });
+    const trigger = container.querySelector<HTMLButtonElement>(".chat-pane__branches-trigger");
+    expect(trigger?.disabled).toBe(true);
+    container.querySelector(".chat-pane__branches-menu")?.dispatchEvent(
+      new CustomEvent("wa-select", {
+        detail: { item: { value: "other" } },
+      }),
+    );
+    expect(props.onBranchSelect).not.toHaveBeenCalled();
   });
 });
 
